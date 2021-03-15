@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+        <script>
+        $(document).ready(function(){
+        
+            var invalid_output="invalid ip";
+            
+            // Based on https://tools.ietf.org/html/rfc5952#page-10
+            function normalize_ipv6(ip_string) {
+                var ipv6_octets = full_IPv6(ip_string).split(':');
+                //var ipv6_octets = ip_string.split(':');
+                var normalized_octets = []
+                
+                if (ipv6_octets.length > 8)
+                    return invalid_output;
+                
+                // rfc5952_4.1 - Handling Leading Zeros in a 16-Bit Field
+                for (var octet_index in ipv6_octets) {
+                    var octet = ipv6_octets[octet_index];
+                    // console.debug("octet", octet);
+                    
+                    // Trim leading zero
+                    while (octet[0] == '0')
+                        octet = octet.substr(1)
+                        
+                    if (octet.length == 0)
+                        octet = '0'
+                        
+                    if (/^[0-9a-f]+$/i.test(octet) == false)
+                        return invalid_output;
+                        
+                    // console.debug("octet after normalizing rfc5952_4.1", octet);
+                    normalized_octets.push(octet);
+                }
+                
+                // console.debug(normalized_octets)
+                
+                // rfc5952_4.2 - "::" Usage
+                var double_colon_sindex = -1
+                var double_colon_length = 1         // 4.2.2.  Handling One 16-Bit 0 Field
+                
+                // 4.2.1.  Shorten as Much as Possible
+                for (var i=0; i<normalized_octets.length; i++) {
+                    if(normalized_octets[i] == '0') {
+                        for (var j = i+1; j<normalized_octets.length && normalized_octets[j] == '0'; j++);
+                        
+                        if (double_colon_length < j-i) {
+                            double_colon_sindex = i;
+                            double_colon_length = j-i;
+                            // console.log("Changed dc vals", double_colon_sindex, double_colon_length);
+                        }
+                        
+                        // Push the i index forward based on continuous '0' octets
+                        i = j-1;
+                    }
+                }
+                
+                // 4.2.3.  Choice in Placement of "::"
+                if (double_colon_sindex >= 0)
+                    normalized_octets.splice(double_colon_sindex, double_colon_length, '');
+                if(normalized_octets[normalized_octets.length-1] == "")
+                    normalized_octets.push("");
+                if(normalized_octets[0] == "")
+                    normalized_octets.unshift("");
+                    
+                // console.log(normalized_octets[-1]);
+                // console.debug(normalized_octets);
+                
+                // rfc5952_4.3 - Lowercase
+                return normalized_octets.join(':').toLowerCase();
+            }
+            
+            
+            // https://stackoverflow.com/questions/30329991/ipv6-as-a-comparable-javascript-string
+            function full_IPv6 (ip_string) {
+                // replace ipv4 address if any
+                var ipv4 = ip_string.match(/(.*:)([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$)/);
+                if (ipv4) {
+                    var ip_string = ipv4[1];
+                    ipv4 = ipv4[2].match(/[0-9]+/g);
+                    for (var i = 0;i < 4;i ++) {
+                        var byte = parseInt(ipv4[i],10);
+                        ipv4[i] = ("0" + byte.toString(16)).substr(-2);
+                    }
+                    ip_string += ipv4[0] + ipv4[1] + ':' + ipv4[2] + ipv4[3];
+                }
+
+                // take care of leading and trailing ::
+                ip_string = ip_string.replace(/^:|:$/g, '');
+
+                var ipv6 = ip_string.split(':');
+
+                for (var i = 0; i < ipv6.length; i ++) {
+                    var hex = ipv6[i];
+                    if (hex != "") {
+                        // normalize leading zeros
+                        ipv6[i] = ("0000" + hex).substr(-4);
+                    }
+                    else {
+                        // normalize grouped zeros ::
+                        hex = [];
+                        for (var j = ipv6.length; j <= 8; j ++) {
+                            hex.push('0000');
+                        }
+                        ipv6[i] = hex.join(':');
+                    }
+                }
+
+                return ipv6.join(':');
+            }
+            
+            function getIpv4(ipv6_string) {
+                return ipv6_string.split(':')
+                         .slice(-4)
+                         .join(".");
+            }
+            
+            $("#btn-convert").click(function() {
+                var input = $("#input-text").val().split("\n");
+                // console.log(input);
+                
+                var output = [];
+                var output_v4 = [];
+                var counter_success = 0;
+                var counter_fail = 0;
+                var counter_blank = 0;
+                
+                for (var i=0; i<input.length; i++) {
+                
+                    // console.log(input[i]);
+                    
+                    if (input[i] != "") {
+                        var ipv6_normalized = normalize_ipv6(input[i]);
+                        // console.log(ipv6_normalized);
+                        output.push(ipv6_normalized);
+                        
+                        if (ipv6_normalized == invalid_output) {
+                            counter_fail++;
+                        } else {
+                            counter_success++;
+                        }
+                        
+                        var ipv4 = getIpv4(ipv6_normalized);
+                        output_v4.push(ipv4);
+                    }
+                    else {
+                        output.push("");
+                        output_v4.push("");
+                        counter_blank++;
+                    }
+                }
+                
+                // console.log("Output", output);
+                $("#output-text").text(output.join("\n"));
+                $("#outputv4-text").text(output_v4.join("\n"));
+                if (counter_success)
+                    $("#output-success").text(counter_success+" success").show();
+                else
+                    $("#output-success").hide();
+                if (counter_fail)
+                    $("#output-fail").text(counter_fail+" failed").show();
+                else
+                    $("#output-fail").hide();
+                if (counter_blank)
+                    $("#output-blank").text(counter_blank+" blanks").show();
+                else
+                    $("#output-blank").hide();
+            });
+        });
+        </script>
+        <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+    </head>
+    <body>
+        <div class="w3-container w3-box w3-center">
+            <div class="w3-container" ">
+                <div class="w3-third w3-border-right w3-display-container">
+                    <h1>Input</h1>
+                    <p>
+                        <!-- <textarea rows="20" cols="40" id="input-text" placeholder="ipv6 address">2405:0200:0204:0112:172:22:48:100</textarea> -->
+                        <textarea rows="20" cols="35" id="input-text" placeholder="ipv6 address"></textarea>
+                    </p>
+                    <input type="button" value="Convert" id="btn-convert" class="w3-button w3-blue w3-small w3-round">
+                </div>
+                <div class="w3-third w3-border-right w3-display-container">
+                    <h1>Output</h1>
+                    <p>
+                       <!--  <div class="w3-display-container">
+                            <div class="w3-display-topmiddle w3-border w3-padding" id="output-text" style="min-height:450px; width:350px;">
+                            </div>
+                        </div> -->
+                        <textarea rows="20" cols="35" id="output-text" placeholder="output"></textarea>
+                    </p>
+                    <div class="w3-green w3-small w3-round" id="output-success" style="display:none">10 Successful</div>
+                    <div class="w3-red w3-small w3-round" id="output-fail" style="display:none">5 Invalid IP</div>
+                    <div class="w3-yellow w3-small w3-round" id="output-blank" style="display:none">10 no ip</div>
+                </div>
+                <div class="w3-third w3-display-container">
+                    <h1>IPv4 octets</h1>
+                    <p>
+                        <textarea rows="20" cols="35" id="outputv4-text" placeholder="ipv4 output"></textarea>
+                    </p>
+                </div>
+            </div>
+        </div>
+        <span class="w3-tiny">&copy; Jojo Jose (jojjose) 2018</span>
+    </body>
+</html>
